@@ -1,0 +1,98 @@
+name: Build MPVRX
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  HEW: "is.xyz.mpv"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone mpvRx upstream
+        run: git clone --depth 1 https://github.com/Riteshp2001/mpvRx.git src
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+          cache: 'gradle'
+          cache-dependency-path: src/**/*.gradle*
+
+      - name: Patch applicationId
+        working-directory: src
+        run: |
+          set -e
+          echo "Before:"
+          grep -rn "applicationId" app/build.gradle.kts
+
+          sed -i "s/applicationId = \".*\"/applicationId = \"${HEW}\"/" app/build.gradle.kts
+
+          echo "After:"
+          grep -rn "applicationId" app/build.gradle.kts
+
+      - name: Make gradlew executable
+        working-directory: src
+        run: chmod +x ./gradlew
+
+      - name: Build release APKs
+        working-directory: src
+        run: ./gradlew assembleStandardRelease
+
+      - name: Prepare signing keystore
+        working-directory: src
+        run: |
+          set -e
+          if [ -z "${{ secrets.SIGNING_KEYSTORE }}" ]; then
+            keytool -genkey -v -keystore release.keystore -alias patchkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "android123" -keypass "android123" \
+              -dname "CN=AutoBuild,O=AutoBuild,C=ID"
+            echo "KS_ALIAS=patchkey" >> $GITHUB_ENV
+            echo "KS_PASS=android123" >> $GITHUB_ENV
+          else
+            echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > release.keystore
+            echo "KS_ALIAS=${{ secrets.SIGNING_KEY_ALIAS }}" >> $GITHUB_ENV
+            echo "KS_PASS=${{ secrets.SIGNING_STORE_PASSWORD }}" >> $GITHUB_ENV
+          fi
+
+      - name: Sign APKs
+        working-directory: src
+        run: |
+          set -e
+          RELEASE_DIR="app/build/outputs/apk/standard/release"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          find "$RELEASE_DIR" -name "*-unsigned.apk" -type f | while read -r apk; do
+            signed_apk="${apk/-unsigned/}"
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "$KS_ALIAS" \
+              --ks-pass "pass:$KS_PASS" \
+              --key-pass "pass:$KS_PASS" \
+              --out "$signed_apk" \
+              "$apk"
+            "$BUILD_TOOLS/apksigner" verify "$signed_apk"
+            rm "$apk"
+          done
+          rm release.keystore
+
+      - name: Collect APKs
+        working-directory: src
+        run: |
+          mkdir -p /tmp/out
+          find app/build/outputs/apk/standard/release -name "*.apk" -exec cp {} /tmp/out/ \;
+
+      - name: Create pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "build-${{ github.run_number }}"
+          name: "Patched MPVRX build ${{ github.run_number }}"
+          prerelease: true
+          files: /tmp/out/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
