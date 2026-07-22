@@ -87,12 +87,9 @@ jobs:
           mkdir -p /tmp/out
           find app/build/outputs/apk/standard/release -name "*.apk" -exec cp {} /tmp/out/ \;
 
-      - name: Create pre-release
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "build-${{ github.run_number }}"
-          name: "Patched MPVRX build ${{ github.run_number }}"
-          prerelease: true
-          files: /tmp/out/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: mpvrx-patched-${{ github.run_number }}
+          path: /tmp/out/*.apk
+          retention-days: 30
