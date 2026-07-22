@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone mpvRx upstream
+      - name: Clone upstream
         run: git clone --depth 1 https://github.com/Riteshp2001/mpvRx.git src
 
       - name: Setup JDK 17
@@ -87,9 +87,18 @@ jobs:
           mkdir -p /tmp/out
           find app/build/outputs/apk/standard/release -name "*.apk" -exec cp {} /tmp/out/ \;
 
-      - name: Upload artifact
+      - name: Upload armeabi-v7a
         uses: actions/upload-artifact@v4
         with:
-          name: mpvrx-patched-${{ github.run_number }}
-          path: /tmp/out/*.apk
+          name: mpvrx-patched-armeabi-v7a-${{ github.run_number }}
+          path: src/app/build/outputs/apk/standard/release/*armeabi-v7a*.apk
           retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload arm64-v8a
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpvrx-patched-arm64-v8a-${{ github.run_number }}
+          path: src/app/build/outputs/apk/standard/release/*arm64-v8a*.apk
+          retention-days: 30
+          if-no-files-found: ignore
